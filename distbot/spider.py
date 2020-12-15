@@ -1,4 +1,5 @@
 from distbot.utils import logger, user_agents
+from distbot.stealth import stealth
 
 from pyppeteer.network_manager import Request, Response
 from pyppeteer.browser import Browser
@@ -266,8 +267,7 @@ class Spider:
 
     async def set_stealth(self, page: Page):
         "add JavaScript functions to prevent automation detection."
-        await page.evaluateOnNewDocument(
-            f"() => {{{Path(__file__).parent.joinpath('stealth.min.js').read_text()}}}")
+        await page.evaluateOnNewDocument(stealth)
 
     async def _add_page_settings(self, page: Page) -> None:
         """Add custom settings to a page."""

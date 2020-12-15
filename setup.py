@@ -3,7 +3,7 @@ from pathlib import Path
 
 setuptools.setup(
     name='distbot',
-    version='2.7.1',
+    version='2.8.0',
     author='Dan Kelleher',
     author_email='danielkelleher@protonmail.com',
     maintainer='Dan Kelleher',

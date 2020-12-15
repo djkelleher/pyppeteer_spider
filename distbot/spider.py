@@ -1,5 +1,5 @@
 from distbot.utils import logger, user_agents
-from distbot.stealth import stealth
+import distbot.evasions as ev
 
 from pyppeteer.network_manager import Request, Response
 from pyppeteer.browser import Browser
@@ -267,7 +267,18 @@ class Spider:
 
     async def set_stealth(self, page: Page):
         "add JavaScript functions to prevent automation detection."
-        await page.evaluateOnNewDocument(stealth)
+        await asyncio.gather(
+            page.evaluateOnNewDocument(ev.webdriver),
+            page.evaluateOnNewDocument(ev.media_codecs),
+            page.evaluateOnNewDocument(ev.console_debug),
+            page.evaluateOnNewDocument(ev.iframe),
+            page.evaluateOnNewDocument(ev.languages),
+            page.evaluateOnNewDocument(ev.navigator),
+            page.evaluateOnNewDocument(ev.permissions),
+            page.evaluateOnNewDocument(ev.plugins),
+            page.evaluateOnNewDocument(ev.webgl),
+            page.evaluateOnNewDocument(ev.window_outer_dims),
+        )
 
     async def _add_page_settings(self, page: Page) -> None:
         """Add custom settings to a page."""

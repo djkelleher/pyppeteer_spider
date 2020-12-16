@@ -85,21 +85,16 @@ class Spider:
         if browser in self.browsers:
             return self.browsers[browser]['launch_options'].get('proxy')
 
-    async def _set_cookies(self, page: Page, cookies: Union[List[Dict[str, str]], Dict[str, str]]) -> None:
-        """Add cookies to page."""
-        if isinstance(cookies, dict):
-            await page.setCookie(cookies)
-        elif isinstance(cookies, (list, tuple, set)):
-            await asyncio.gather(
-                *[page.setCookie(cookie) for cookie in cookies])
-
     async def get(self, url: str, retries: int = 2, **kwargs) -> Tuple[Response, Page]:
         """Navigate next idle page to url."""
         async def _get(url: str, page: Page, **kwargs) -> Response:
             """All page functions that will hang on page crash go here."""
             if 'cookies' in kwargs:
                 # set request cookies if provided.
-                await self._set_cookies(page, kwargs.pop('cookies'))
+                cookies = kwargs.pop('cookies')
+                set_cookies = page.setCookie(cookies) if isinstance(
+                    cookies, dict) else page.setCookie(*cookies)
+                await set_cookies
             # all kwargs besides 'cookies' should be for goto
             resp = await page.goto(url, **kwargs)
             if self.browsers[page.browser]['launch_options'].get('screenshot', False):

@@ -260,20 +260,24 @@ class Spider:
     async def set_blocked_urls(self, page: Page, urls: List[str]):
         await page._client.send('Network.setBlockedURLs', {'urls': urls})
 
-    async def set_stealth(self, page: Page):
+    async def set_stealth(self, page: Page, headless: bool):
         "add JavaScript functions to prevent automation detection."
-        await asyncio.gather(
+        tasks = [
             page.evaluateOnNewDocument(ev.webdriver),
-            page.evaluateOnNewDocument(ev.media_codecs),
-            page.evaluateOnNewDocument(ev.console_debug),
-            page.evaluateOnNewDocument(ev.iframe),
-            page.evaluateOnNewDocument(ev.languages),
-            page.evaluateOnNewDocument(ev.navigator),
-            page.evaluateOnNewDocument(ev.permissions),
-            page.evaluateOnNewDocument(ev.plugins),
-            page.evaluateOnNewDocument(ev.webgl),
             page.evaluateOnNewDocument(ev.window_outer_dims),
-        )
+            page.evaluateOnNewDocument(ev.webgl),
+            page.evaluateOnNewDocument(ev.media_codecs)
+        ]
+        if headless:
+            tasks += [
+                page.evaluateOnNewDocument(ev.console_debug),
+                page.evaluateOnNewDocument(ev.iframe),
+                page.evaluateOnNewDocument(ev.languages),
+                page.evaluateOnNewDocument(ev.navigator),
+                page.evaluateOnNewDocument(ev.permissions),
+                page.evaluateOnNewDocument(ev.plugins),
+            ]
+        await asyncio.gather(*tasks)
 
     async def _add_page_settings(self, page: Page) -> None:
         """Add custom settings to a page."""
@@ -283,7 +287,8 @@ class Spider:
         if 'defaultNavigationTimeout' in launch_options:
             page.setDefaultNavigationTimeout(
                 launch_options['defaultNavigationTimeout'])
-        tasks = [self.set_stealth(page)]
+        tasks = [self.set_stealth(
+            page, self.browsers[page.browser]['launch_options'].get('headless', False))]
         # blocks URLs from loading.
         if 'blockedURLs' in launch_options:
             tasks.append(self.set_blocked_urls(

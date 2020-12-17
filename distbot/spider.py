@@ -255,7 +255,7 @@ class Spider:
 
     async def set_ad_block(self, page: Page, enabled: bool = True):
         # Enable Chrome's experimental ad filter on all sites.
-        await page._client.send('Page.setAdBlockingEnabled', {'enabled': True})
+        await page._client.send('Page.setAdBlockingEnabled', {'enabled': enabled})
 
     async def set_blocked_urls(self, page: Page, urls: List[str]):
         await page._client.send('Network.setBlockedURLs', {'urls': urls})
@@ -289,6 +289,9 @@ class Spider:
                 launch_options['defaultNavigationTimeout'])
         tasks = [self.set_stealth(
             page, self.browsers[page.browser]['launch_options'].get('headless', False))]
+        if 'setAdBlockingEnabled' in launch_options:
+            tasks.append(self.set_ad_block(
+                page, launch_options['setAdBlockingEnabled']))
         # blocks URLs from loading.
         if 'blockedURLs' in launch_options:
             tasks.append(self.set_blocked_urls(

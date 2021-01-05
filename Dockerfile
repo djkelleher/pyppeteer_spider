@@ -1,4 +1,4 @@
-FROM ubuntu:focal
+FROM debian:latest
 
 RUN apt-get update \
     && apt-get install -y wget gnupg \
@@ -30,4 +30,4 @@ WORKDIR /home/distbot
 RUN python3 setup.py install
 RUN python3 scripts/download_chromium.py
 
-CMD ["python3","distbot/server.py"]
+#CMD ["python3","distbot/server.py"]

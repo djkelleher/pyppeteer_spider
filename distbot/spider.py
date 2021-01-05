@@ -393,7 +393,8 @@ class Spider:
         if page in self.idle_page_q._queue:
             # remove page from idle queue.
             self.idle_page_q._queue.remove(page)
-        del self.pages[page]
+        if page in self.pages:
+            del self.pages[page]
         try:
             # wait for page to close.
             await asyncio.wait_for(page.close(), timeout=2)
@@ -414,7 +415,8 @@ class Spider:
             await asyncio.wait_for(browser.close(), timeout=2)
         except asyncio.TimeoutError:
             pass
-        del self.browsers[browser]
+        if browser in self.browsers:
+            del self.browsers[browser]
 
     def _set_screenshot_dir(self) -> None:
         """create screenshot directory for this Spider."""

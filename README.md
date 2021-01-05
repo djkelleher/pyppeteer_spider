@@ -30,6 +30,10 @@ screenshot each page that is navigated.
 Default maximum navigation timeout in ms.   
 *Default: 45000*   
 
+**setAdBlockingEnabled**   
+Enable Chrome's experimental ad filter on all sites.   
+*Default: False*   
+
 **blockedURLs**   
 List of URLs and/or URL patterns to prevent from loading.   
 *Default: []*   

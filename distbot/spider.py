@@ -85,21 +85,16 @@ class Spider:
         if browser in self.browsers:
             return self.browsers[browser]['launch_options'].get('proxy')
 
-    async def _set_cookies(self, page: Page, cookies: Union[List[Dict[str, str]], Dict[str, str]]) -> None:
-        """Add cookies to page."""
-        if isinstance(cookies, dict):
-            await page.setCookie(cookies)
-        elif isinstance(cookies, (list, tuple, set)):
-            await asyncio.gather(
-                *[page.setCookie(cookie) for cookie in cookies])
-
     async def get(self, url: str, retries: int = 2, **kwargs) -> Tuple[Response, Page]:
         """Navigate next idle page to url."""
         async def _get(url: str, page: Page, **kwargs) -> Response:
             """All page functions that will hang on page crash go here."""
             if 'cookies' in kwargs:
                 # set request cookies if provided.
-                await self._set_cookies(page, kwargs.pop('cookies'))
+                cookies = kwargs.pop('cookies')
+                set_cookies = page.setCookie(cookies) if isinstance(
+                    cookies, dict) else page.setCookie(*cookies)
+                await set_cookies
             # all kwargs besides 'cookies' should be for goto
             resp = await page.goto(url, **kwargs)
             if self.browsers[page.browser]['launch_options'].get('screenshot', False):
@@ -260,25 +255,29 @@ class Spider:
 
     async def set_ad_block(self, page: Page, enabled: bool = True):
         # Enable Chrome's experimental ad filter on all sites.
-        await page._client.send('Page.setAdBlockingEnabled', {'enabled': True})
+        await page._client.send('Page.setAdBlockingEnabled', {'enabled': enabled})
 
     async def set_blocked_urls(self, page: Page, urls: List[str]):
         await page._client.send('Network.setBlockedURLs', {'urls': urls})
 
-    async def set_stealth(self, page: Page):
+    async def set_stealth(self, page: Page, headless: bool):
         "add JavaScript functions to prevent automation detection."
-        await asyncio.gather(
+        tasks = [
             page.evaluateOnNewDocument(ev.webdriver),
-            page.evaluateOnNewDocument(ev.media_codecs),
-            page.evaluateOnNewDocument(ev.console_debug),
-            page.evaluateOnNewDocument(ev.iframe),
-            page.evaluateOnNewDocument(ev.languages),
-            page.evaluateOnNewDocument(ev.navigator),
-            page.evaluateOnNewDocument(ev.permissions),
-            page.evaluateOnNewDocument(ev.plugins),
-            page.evaluateOnNewDocument(ev.webgl),
             page.evaluateOnNewDocument(ev.window_outer_dims),
-        )
+            page.evaluateOnNewDocument(ev.webgl),
+            page.evaluateOnNewDocument(ev.media_codecs)
+        ]
+        if headless:
+            tasks += [
+                page.evaluateOnNewDocument(ev.console_debug),
+                page.evaluateOnNewDocument(ev.iframe),
+                page.evaluateOnNewDocument(ev.languages),
+                page.evaluateOnNewDocument(ev.navigator),
+                page.evaluateOnNewDocument(ev.permissions),
+                page.evaluateOnNewDocument(ev.plugins),
+            ]
+        await asyncio.gather(*tasks)
 
     async def _add_page_settings(self, page: Page) -> None:
         """Add custom settings to a page."""
@@ -288,7 +287,11 @@ class Spider:
         if 'defaultNavigationTimeout' in launch_options:
             page.setDefaultNavigationTimeout(
                 launch_options['defaultNavigationTimeout'])
-        tasks = [self.set_stealth(page)]
+        tasks = [self.set_stealth(
+            page, self.browsers[page.browser]['launch_options'].get('headless', False))]
+        if 'setAdBlockingEnabled' in launch_options:
+            tasks.append(self.set_ad_block(
+                page, launch_options['setAdBlockingEnabled']))
         # blocks URLs from loading.
         if 'blockedURLs' in launch_options:
             tasks.append(self.set_blocked_urls(

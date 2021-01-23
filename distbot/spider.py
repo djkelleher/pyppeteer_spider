@@ -21,7 +21,6 @@ import logging
 import asyncio
 import random
 import signal
-import pickle
 import json
 import re
 
@@ -46,7 +45,10 @@ class Spider:
         """Launch a new browser."""
         # create screenshot directory if user wants screenshots.
         if launch_options.get('screenshot', False):
-            self._set_screenshot_dir()
+            # create screenshot directory for this Spider.
+            self.screenshot_dir = Path(
+                f"distbot/screenshots_{self.start_time.strftime('%Y-%m-%d_%H:%M:%S')}")
+            self.screenshot_dir.mkdir(exist_ok=True)
         # if server address is provided, launch browser on server.
         if server:
             browser = await self._launch_remote_browser(server, launch_options)
@@ -394,19 +396,11 @@ class Spider:
         if browser in self.browsers:
             del self.browsers[browser]
 
-    def _set_screenshot_dir(self) -> None:
-        """create screenshot directory for this Spider."""
-        self.screenshot_dir = Path(
-            f"distbot/screenshots_{self.start_time.strftime('%Y-%m-%d_%H:%M:%S')}")
-        self.screenshot_dir.mkdir(exist_ok=True)
-
     async def _take_screenshot(self, page: Page) -> None:
         """take a screenshot of the current page."""
-        page_id = self.pages[page]['id']
         # remove this page's old screenshot.
-        for f in self.screenshot_dir.glob(f'*{page_id}.jpeg'):
+        for f in self.screenshot_dir.glob(f"*{self.pages[page]['id']}.jpeg"):
             f.unlink()
-        # take new screenshot.
         # quality=0 uses less CPU and still provides a pretty clear image.
         await page.screenshot(path=str(self.screenshot_dir.joinpath(
             f"{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}_{page}.jpeg")), quality=0)

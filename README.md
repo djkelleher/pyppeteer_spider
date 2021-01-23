@@ -80,7 +80,7 @@ Address of proxy server to use.
     "defaultViewport": {},
     "executablePath": "/usr/bin/google-chrome-stable",
     "defaultNavigationTimeout": 60_000,
-    "blockedURLs": ["google-analytics.com","facebook.com"],
+    "blockedURLs": ["google","facebook","youtube"],
     "requestAbortTypes": ["font", "stylesheet"],
     "deleteCookies": True,
     '--disable-extensions'

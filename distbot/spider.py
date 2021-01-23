@@ -171,7 +171,7 @@ class Spider:
         if sig is not None:
             logger.info(f"Caught signal: {sig.name}")
         logger.info("Shutting down...")
-        await self.cancel_spider_tasks()
+        # await self.cancel_spider_tasks()
         # close all browsers on all servers.
         await asyncio.gather(
             *[asyncio.create_task(
@@ -377,8 +377,8 @@ class Spider:
         logger.info(f"Browser {browser} replacement complete.")
 
     async def _log_browser_error_status(self, browser: Browser, error: bool) -> None:
-        """If error, increment concecutive error count snd replace browser if concecutive error count exceeds limit.
-           If no error, reset concecutive error count."""
+        """If error, increment consecutive error count snd replace browser if consecutive error count exceeds limit.
+           If no error, reset consecutive error count."""
         browser_data = self.browsers.get(browser)
         # Don't record error for a browser that has already been replaced or is currently being replaced.
         if browser_data and not browser_data['lock'].locked():

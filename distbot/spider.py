@@ -376,7 +376,7 @@ class Spider:
         try:
             # wait for page to close.
             await asyncio.wait_for(page.close(), timeout=2)
-        except (asyncio.TimeoutError, PyppeteerError):
+        except Exception:  # (asyncio.TimeoutError, PyppeteerError):
             logger.warning(
                 f"Page {page} could not be properly closed.")
 

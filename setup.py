@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='distbot',
-    version='2.8.7',
+    version='2.8.8',
     author='Dan Kelleher',
     author_email='danielkelleher@protonmail.com',
     maintainer='Dan Kelleher',

@@ -6,7 +6,7 @@ from pyppeteer.browser import Browser
 from pyppeteer.page import Page
 import pyppeteer.connection
 import pyppeteer.launcher
-import pyppeteer.errors
+from pyppeteer.errors import PyppeteerError
 import requests
 
 from typing import Dict, Tuple, List, Union, Any
@@ -44,8 +44,6 @@ class Spider:
                           server: str = None,
                           launch_options: Dict[str, Any] = {}) -> Browser:
         """Launch a new browser."""
-        if 'proxy' in launch_options:
-            self.set_launch_args_proxy(launch_options)
         # create screenshot directory if user wants screenshots.
         if launch_options.get('screenshot', False):
             self._set_screenshot_dir()
@@ -74,12 +72,6 @@ class Spider:
         for page in await browser.pages():
             await self._init_page(page)
 
-    def set_launch_args_proxy(self, launch_options: Dict[str, Any]) -> None:
-        """Remove any old proxy from args and add a new proxy to args."""
-        launch_options['args'] = [
-            a for a in launch_options.get('args', []) if not a.startswith('--proxy-server=')] \
-            + [f'--proxy-server="{launch_options["proxy"]}"']
-
     def current_browser_proxy(self, browser: Browser) -> Union[str, None]:
         """Get address of proxy that browser is currently using."""
         if browser in self.browsers:
@@ -104,50 +96,43 @@ class Spider:
 
         async def _retry_get(url: str, retries: int, **kwargs):
             """Retry navigation if there are remaining retries."""
+            if retries <= 0:
+                logger.error(
+                    f"Max retries exceeded: {url}. URL can not be navigated.")
+                return
             retries -= 1
-            if retries >= 0:
-                logger.warning(
-                    f"Retrying request to {url}. Retries remaining: {retries}")
-                return await asyncio.create_task(
-                    self.get(url, retries, **kwargs))
-            logger.error(
-                f"Max retries exceeded: {url}. URL can not be navigated.")
+            logger.warning(
+                f"Retrying request to {url}. Retries remaining: {retries}")
+            return await asyncio.create_task(
+                self.get(url, retries, **kwargs))
 
         # get next page from idle queue.
         page = await self._get_idle_page()
-        browser_data = self.browsers[page.browser]
-        timeout = kwargs.get(
-            'timeout', self._default_nav_func_wait(browser_data))
+        nav_timeout = kwargs.get('timeout', self.browsers[page.browser]['launch_options'].get(
+            'defaultNavigationTimeout', 30_000))
+        # Allow waiting for 25% longer than default navigation timeout before assuming a browser crash. Convert ms to s.
+        browser_timeout = nav_timeout * 0.00125
         try:
-            resp = await asyncio.wait_for(_get(url, page, **kwargs), timeout=timeout)
+            resp = await asyncio.wait_for(_get(url, page, **kwargs), timeout=browser_timeout)
         except asyncio.TimeoutError:
-            # timeout suggests browser crash.
             logger.warning(
-                f"Detected browser crash {page.browser} (get timeout exceeded {timeout})")
+                f"Detected browser crash {page.browser} (timeout exceeded {browser_timeout}s)")
             await self.replace_browser(page.browser)
             return await _retry_get(url, retries, **kwargs)
         except Exception as e:
             logger.exception(
                 f"Error fetching page {url}: {e}")
             # record that there was an error while navigating page.
-            await self._log_browser_error_status(page.browser, True)
+            await self._record_browser_error_status(page.browser, True)
             # add the page back to idle page queue.
             await self.set_idle(page)
             return await _retry_get(url, retries, **kwargs)
         # record that page was navigated with no error.
-        await self._log_browser_error_status(page.browser, False)
+        await self._record_browser_error_status(page.browser, False)
         status = resp.status if resp else None
         logger.info(
-            f"[{status}] (server - {browser_data['server']}, browser - {browser_data['id']}, page - {self.pages[page]['id']}): {page.url}")
+            f"[{status}] (page - {self.pages[page]['id']}): {page.url}")
         return resp, page
-
-    def _default_nav_func_wait(self, browser_data: Dict[str, Any]) -> int:
-        """Default asyncio.wait_for timeout to use for functions that naviage a page."""
-        # Pyppeteer's default navigation timeout is 30s. Allow waiting for 25% longer than default navigation timeout.
-        default_wait_time = browser_data['launch_options'].get(
-            'defaultNavigationTimeout', 30_000) * 1.25
-        # Pyppeteer timout and defaultNavigationTimeout are in milliseconds, but wait_for needs seconds.
-        return default_wait_time / 1_000
 
     async def set_idle(self, page: Page) -> None:
         """Add page to the idle queue."""
@@ -158,24 +143,15 @@ class Spider:
             # mark that page is idle.
             self.pages[page]['is_idle'] = True
 
-    async def cancel_spider_tasks(self):
-        """Cancel all of Spider's tasks."""
-        tasks = [t for t in asyncio.all_tasks(
-        ) if t is not asyncio.current_task() and 'coro=<Spider.' in str(t)]
-        [t.cancel() for t in tasks]
-        logger.info(f"Cancelling {len(tasks)} outstanding tasks.")
-        return await asyncio.gather(*tasks, return_exceptions=True)
-
     async def shutdown(self, sig=None) -> None:
         """Shutdown all browsers."""
         if sig is not None:
             logger.info(f"Caught signal: {sig.name}")
         logger.info("Shutting down...")
-        # await self.cancel_spider_tasks()
         # close all browsers on all servers.
         await asyncio.gather(
             *[asyncio.create_task(
-                self._shutdown_browser(b))
+                self.shutdown_browser(b))
                 for b in set(self.browsers.keys())])
 
     async def _launch_local_browser(self, launch_options: Dict[str, Any] = None) -> Browser:
@@ -244,7 +220,7 @@ class Spider:
                 # wait for page to clear cookies.
                 await asyncio.wait_for(
                     page._client.send('Network.clearBrowserCookies'), timeout=3)
-        except (asyncio.TimeoutError, pyppeteer.errors.NetworkError) as e:
+        except (asyncio.TimeoutError, PyppeteerError) as e:
             # all page functions will hang and time out if browser has crashed.
             # replace crashed browser.
             logger.warning(f"Detected error with browser {page.browser}: {e}")
@@ -345,7 +321,7 @@ class Spider:
         asyncio.create_task(
             self._check_idle_status(page))
 
-    async def replace_browser(self, browser: Browser, launch_options: Dict[str, Any] = None) -> None:
+    async def replace_browser(self, browser: Browser) -> None:
         """Close browser and launch a new one."""
         # check if this browser has already been replaced.
         if browser not in self.browsers:
@@ -365,18 +341,15 @@ class Spider:
         async with lock:
             logger.info(f"Replacing browser: {browser}.")
             browser_data = self.browsers[browser]
-            # update launch options if new options are provided.
-            if launch_options:
-                browser_data['launch_options'].update(launch_options)
             # close the old browser.
-            await self._shutdown_browser(browser)
+            await self.shutdown_browser(browser)
             # add a new browser.
             await self.add_browser(pages=browser_data['page_count'],
                                    server=browser_data['server'],
                                    launch_options=browser_data['launch_options'])
         logger.info(f"Browser {browser} replacement complete.")
 
-    async def _log_browser_error_status(self, browser: Browser, error: bool) -> None:
+    async def _record_browser_error_status(self, browser: Browser, error: bool) -> None:
         """If error, increment consecutive error count snd replace browser if consecutive error count exceeds limit.
            If no error, reset consecutive error count."""
         browser_data = self.browsers.get(browser)
@@ -401,22 +374,22 @@ class Spider:
         try:
             # wait for page to close.
             await asyncio.wait_for(page.close(), timeout=2)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, PyppeteerError):
             logger.warning(
                 f"Page {page} could not be properly closed.")
 
-    async def _shutdown_browser(self, browser: Browser) -> None:
+    async def shutdown_browser(self, browser: Browser) -> None:
         """Close browser and remove all references."""
         logger.info(f"Removing browser: {browser}")
         # remove all pages from the browser.
-        for page in await browser.pages():
-            await self._close_page(page)
+        await asyncio.gather(
+            *[self._close_page(page) for page in await browser.pages()])
         # disable self.__on_connection_close
         browser._connection._closeCallback = None
         # attempt to properly close browser.
         try:
             await asyncio.wait_for(browser.close(), timeout=2)
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, PyppeteerError):
             pass
         if browser in self.browsers:
             del self.browsers[browser]

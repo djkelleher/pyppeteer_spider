@@ -55,8 +55,8 @@ async def browsers(request):
     return response.json(browsers_ws)
 
 
-@ app.route('/rm_browser')
-async def rm_browser(request):
+@ app.route('/remove_browser')
+async def remove_browser(request):
     b = request.args['browser'][0]
     if b in active_browsers:
         logging.info(f"Shutting down browser: {b}")
